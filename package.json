@@ -1,0 +1,40 @@
+{
+  "name": "llamagen-cli",
+  "version": "0.1.0",
+  "description": "Official command-line tool for the LlamaGen API, including comic api and animation api workflows.",
+  "type": "module",
+  "bin": {
+    "llamagen": "./bin/llamagen.js"
+  },
+  "files": [
+    "bin",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
+  "scripts": {
+    "test": "node --test",
+    "lint": "node --check bin/llamagen.js",
+    "prepack": "npm run lint && npm test"
+  },
+  "keywords": [
+    "llamagen",
+    "comic api",
+    "animation api",
+    "cli",
+    "command-line",
+    "sdk"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/LlamaGenAI/llamagen-cli.git"
+  },
+  "bugs": {
+    "url": "https://github.com/LlamaGenAI/llamagen-cli/issues"
+  },
+  "homepage": "https://llamagen.ai/comic-api/resources/libraries",
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT"
+}
