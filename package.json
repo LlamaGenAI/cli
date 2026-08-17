@@ -1,20 +1,21 @@
 {
-  "name": "llamagen-cli",
-  "version": "0.1.0",
-  "description": "Official command-line tool for the LlamaGen API, including comic api and animation api workflows.",
+  "name": "@llamagen/cli",
+  "version": "0.1.0-beta.1",
+  "description": "Official LlamaGen CLI with browser login and Comic API workflows.",
   "type": "module",
   "bin": {
     "llamagen": "./bin/llamagen.js"
   },
   "files": [
     "bin",
+    "src",
     "README.md",
     "LICENSE",
     "CHANGELOG.md"
   ],
   "scripts": {
     "test": "node --test",
-    "lint": "node --check bin/llamagen.js",
+    "lint": "node --check bin/llamagen.js && node --check src/auth.js && node --check src/cli.js && node --check src/config.js && node --check src/errors.js && node --check src/http.js",
     "prepack": "npm run lint && npm test"
   },
   "keywords": [
@@ -27,14 +28,18 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/LlamaGenAI/llamagen-cli.git"
+    "url": "https://github.com/LlamaGenAI/cli.git"
   },
   "bugs": {
-    "url": "https://github.com/LlamaGenAI/llamagen-cli/issues"
+    "url": "https://github.com/LlamaGenAI/cli/issues"
   },
-  "homepage": "https://llamagen.ai/comic-api/resources/libraries",
+  "homepage": "https://llamagen.ai/mcp",
   "engines": {
     "node": ">=18"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public",
+    "tag": "beta"
+  }
 }

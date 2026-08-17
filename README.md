@@ -1,77 +1,173 @@
-# LlamaGen CLI
+# @llamagen/cli
 
-`llamagen-cli` is the official command-line tool for the LlamaGen API. It is inspired by Stripe's CLI workflow and gives developers a fast terminal interface for LlamaGen **comic api** and **animation api** jobs.
+Official command-line interface for LlamaGen Comic API workflows.
 
-## Installation
-
-```bash
-npm install -g llamagen-cli
-```
-
-Then run:
+## Install
 
 ```bash
-llamagen --help
+npm install --global @llamagen/cli@beta
 ```
 
-## Authentication
+Node.js 18 or newer is required.
 
-Use an environment variable:
+## Sign in
 
 ```bash
-export LLAMAGEN_API_KEY=llg_test_...
+llamagen auth login
+llamagen auth status
 ```
 
-Or store a local development key:
+`auth login` opens `llamagen.ai` in your system browser. The browser reuses
+your existing LlamaGen session cookie, asks you to approve the terminal, and
+returns a short-lived one-time code to the CLI. Browser cookies are never read
+or stored by the CLI.
+
+The resulting account-wide Comic API token is stored in
+`~/.llamagen/credentials.json` using mode `0600` and an atomic write. It is
+never printed by `auth status`.
+
+To remove only the local CLI credential:
 
 ```bash
-llamagen config set api-key llg_test_...
+llamagen auth logout
 ```
 
-## Comic API
+This does not sign out the browser and does not revoke the account-wide Comic
+API token used by MCP, SDKs, CI, or other devices.
 
-Create a comic from text plus an uploaded Word, PDF, or TXT script URL:
+## Test against next.llamagen.ai
+
+The authentication site and Comic API are independently configurable:
+
+```bash
+llamagen config set site-url https://next.llamagen.ai
+llamagen auth login
+```
+
+Use a one-off override without changing config:
+
+```bash
+llamagen --site-url https://next.llamagen.ai auth login
+```
+
+Override the Comic API separately when testing an API deployment:
+
+```bash
+llamagen config set api-url https://api.example.llamagen.ai
+```
+
+Restore defaults:
+
+```bash
+llamagen config unset site-url
+llamagen config unset api-url
+```
+
+Environment equivalents:
+
+- `LLAMAGEN_SITE_URL`: browser authentication site.
+- `LLAMAGEN_API_URL`: Comic API base URL.
+- `LLAMAGEN_BASE_URL`: backward-compatible alias for `LLAMAGEN_API_URL`.
+- `LLAMAGEN_API_KEY`: non-interactive credential for CI and servers.
+- `LLAMAGEN_CONFIG_HOME`: override the local config directory.
+
+## Create comics
 
 ```bash
 llamagen comic create \
-  --prompt "american comic illustration, bold outlines" \
-  --prompt-url "https://s.llamagen.ai/yourteam/uploads/script-brief.pdf" \
-  --size 1024x1024 \
+  --prompt "A detective follows a glowing paper crane" \
+  --style manga \
   --wait
 ```
 
-Other commands:
+Create from an uploaded script URL:
 
 ```bash
-llamagen comic get gen_123
-llamagen comic continue gen_123 --prompt "add the next page"
-llamagen comic update-panel gen_123 --page 0 --panel 1 --prompt "make panel 1 cinematic"
+llamagen comic create \
+  --prompt "Adapt this script into a comic" \
+  --prompt-url "https://s.llamagen.ai/yourteam/uploads/script.pdf" \
+  --wait
+```
+
+Inspect and continue a generation:
+
+```bash
+llamagen comic get <generation_id>
+llamagen comic continue <generation_id> --prompt "Continue for four panels"
+llamagen comic update-panel <generation_id> \
+  --page 1 \
+  --panel 2 \
+  --prompt "Move the camera closer to the hero"
+```
+
+Check Comic API usage:
+
+```bash
 llamagen comic usage
 ```
 
-## Animation API
+## Authentication automation
+
+Human-readable status:
 
 ```bash
-llamagen animation create --prompt "animate the finished comic panel"
-llamagen animation get artwork_123
+llamagen auth status
 ```
 
-## Global flags
+Stable JSON output:
 
 ```bash
---api-key <key>          Override LLAMAGEN_API_KEY
---base-url <url>         Default: https://api.llamagen.ai
---timeout-ms <ms>        Request timeout
---poll-interval-ms <ms>  Wait polling interval
+llamagen auth status --json
 ```
 
-## Development
+Offline status only checks whether a local or environment credential exists:
 
 ```bash
-npm test
-npm pack --dry-run
+llamagen auth status --offline
 ```
 
-## Search keywords
+For CI and remote SSH sessions without a browser on the same machine, use an
+environment variable:
 
-comic api, animation api, LlamaGen API, CLI, npm, command-line tool
+```bash
+export LLAMAGEN_API_KEY="<YOUR_LLAMA_GEN_API_TOKEN>"
+llamagen comic usage
+```
+
+## Configuration precedence
+
+Comic API credentials are resolved in this order:
+
+1. `--api-key`
+2. `LLAMAGEN_API_KEY`
+3. Local CLI credentials
+
+URLs are resolved in this order:
+
+1. Command-line flag (`--site-url`, `--api-url`, or legacy `--base-url`)
+2. Environment variable
+3. Local config
+4. The URL returned during browser login
+5. LlamaGen production defaults
+
+## Commands
+
+```text
+llamagen auth login [--no-browser] [--json]
+llamagen auth status [--offline] [--json]
+llamagen auth logout [--json]
+
+llamagen comic create --prompt <prompt> [--wait]
+llamagen comic get <generation_id>
+llamagen comic continue <generation_id> --prompt <prompt>
+llamagen comic update-panel <generation_id> --page <n> --panel <n> --prompt <prompt>
+llamagen comic usage
+
+llamagen config set <site-url|api-url|api-key> <value>
+llamagen config get <site-url|api-url|api-key>
+llamagen config unset <site-url|api-url|api-key>
+```
+
+Comic API documentation: <https://llamagen.ai/comic-api/docs>
+
+MCP and agent setup: <https://llamagen.ai/mcp>
