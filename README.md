@@ -10,6 +10,13 @@ npm install --global @llamagen/cli
 
 Node.js 18 or newer is required.
 
+Install the companion agent skill when you want an AI coding assistant to run
+the comic workflow for you:
+
+```bash
+npx skills add LlamaGenAI/skills
+```
+
 ## Sign in
 
 ```bash
