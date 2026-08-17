@@ -4,7 +4,7 @@
   "description": "Official LlamaGen CLI with browser login and Comic API workflows.",
   "type": "module",
   "bin": {
-    "llamagen": "./bin/llamagen.js"
+    "llamagen": "bin/llamagen.js"
   },
   "files": [
     "bin",
@@ -28,7 +28,7 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/LlamaGenAI/cli.git"
+    "url": "git+https://github.com/LlamaGenAI/cli.git"
   },
   "bugs": {
     "url": "https://github.com/LlamaGenAI/cli/issues"
