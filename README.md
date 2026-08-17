@@ -5,7 +5,7 @@ Official command-line interface for LlamaGen Comic API workflows.
 ## Install
 
 ```bash
-npm install --global @llamagen/cli@beta
+npm install --global @llamagen/cli
 ```
 
 Node.js 18 or newer is required.
@@ -35,25 +35,30 @@ llamagen auth logout
 This does not sign out the browser and does not revoke the account-wide Comic
 API token used by MCP, SDKs, CI, or other devices.
 
-## Test against next.llamagen.ai
+## Custom backend configuration
 
-The authentication site and Comic API are independently configurable:
+The production defaults are `https://llamagen.ai` for browser authentication
+and `https://api.llamagen.ai` for the Comic API. Most users do not need to
+change them.
+
+For local development or an isolated test deployment, the authentication site
+and Comic API are independently configurable:
 
 ```bash
-llamagen config set site-url https://next.llamagen.ai
+llamagen config set site-url https://staging.example.com
 llamagen auth login
 ```
 
 Use a one-off override without changing config:
 
 ```bash
-llamagen --site-url https://next.llamagen.ai auth login
+llamagen --site-url https://staging.example.com auth login
 ```
 
 Override the Comic API separately when testing an API deployment:
 
 ```bash
-llamagen config set api-url https://api.example.llamagen.ai
+llamagen config set api-url https://api.staging.example.com
 ```
 
 Restore defaults:

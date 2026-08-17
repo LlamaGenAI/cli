@@ -1,6 +1,6 @@
 {
   "name": "@llamagen/cli",
-  "version": "0.1.0-beta.1",
+  "version": "0.1.0",
   "description": "Official LlamaGen CLI with browser login and Comic API workflows.",
   "type": "module",
   "bin": {
@@ -39,7 +39,6 @@
   },
   "license": "MIT",
   "publishConfig": {
-    "access": "public",
-    "tag": "beta"
+    "access": "public"
   }
 }
