@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import http from 'node:http';
-import { existsSync, mkdtempSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, statSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { main } from '../bin/llamagen.js';
+import { main, VERSION } from '../bin/llamagen.js';
 
 function capture() {
   let stdout = '';
@@ -29,6 +30,20 @@ async function startServer(responder) {
   return { server, requests, baseUrl: `http://127.0.0.1:${address.port}` };
 }
 
+test('CLI version matches package metadata', () => {
+  const packageJson = JSON.parse(readFileSync(path.join(process.cwd(), 'package.json'), 'utf8'));
+  assert.equal(VERSION, packageJson.version);
+});
+
+test('npm-style symlinked executable runs the CLI entrypoint', { skip: process.platform === 'win32' }, () => {
+  const directory = mkdtempSync(path.join(tmpdir(), 'llamagen-cli-bin-'));
+  const executable = path.join(directory, 'llamagen');
+  symlinkSync(path.join(process.cwd(), 'bin', 'llamagen.js'), executable);
+  const result = spawnSync(executable, ['version'], { encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout.trim(), `llamagen ${VERSION}`);
+});
+
 test('comic create sends promptUrl to latest endpoint', async () => {
   const { server, requests, baseUrl } = await startServer(() => ({ id: 'gen_123', status: 'COMPLETED' }));
   try {
@@ -38,10 +53,66 @@ test('comic create sends promptUrl to latest endpoint', async () => {
     assert.equal(requests[0].method, 'POST');
     assert.equal(requests[0].url, '/v1/comics/generations');
     assert.equal(requests[0].body.promptUrl, 'https://s.llamagen.ai/yourteam/uploads/script-brief.pdf');
+    assert.equal(requests[0].body.preset, 'neutral');
     assert.match(output.stdout, /gen_123/);
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }
+});
+
+test('comic get and panel update match the official zero-based Comic SDK contract', async () => {
+  const { server, requests, baseUrl } = await startServer(() => ({ id: 'gen_123', status: 'PROCESSED' }));
+  try {
+    const getOutput = capture();
+    assert.equal(await main([
+      '--api-key', 'test', '--api-url', baseUrl,
+      'comic', 'get', 'gen_123', '--page', '0', '--panel', '2',
+    ], {}, getOutput.io), 0);
+
+    const updateOutput = capture();
+    assert.equal(await main([
+      '--api-key', 'test', '--api-url', baseUrl,
+      'comic', 'update-panel', 'gen_123', '--page', '0', '--panel', '2',
+      '--panel-prompt', 'Keep the hero consistent',
+    ], {}, updateOutput.io), 0);
+
+    assert.equal(requests[0].url, '/v1/comics/generations/gen_123?page=0&panel=2');
+    assert.equal(requests[1].method, 'PATCH');
+    assert.deepEqual(requests[1].body, {
+      page: 0,
+      panel: 2,
+      panelPrompt: 'Keep the hero consistent',
+      action: 'regeneratePanel',
+    });
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test('comic commands reject invalid ranges, missing panel updates, and unknown options locally', async () => {
+  const invalidPanelCount = capture();
+  assert.equal(await main([
+    '--api-key', 'test', 'comic', 'create', '--prompt', 'hero', '--fix-panel-num', '0',
+  ], {}, invalidPanelCount.io), 2);
+  assert.match(invalidPanelCount.stderr, /--fix-panel-num must be an integer from 1 to 20/);
+
+  const missingPanel = capture();
+  assert.equal(await main([
+    '--api-key', 'test', 'comic', 'update-panel', 'gen_123', '--prompt', 'closer shot',
+  ], {}, missingPanel.io), 2);
+  assert.match(missingPanel.stderr, /Missing required option --panel/);
+
+  const missingPanelValue = capture();
+  assert.equal(await main([
+    '--api-key', 'test', 'comic', 'get', 'gen_123', '--panel',
+  ], {}, missingPanelValue.io), 2);
+  assert.match(missingPanelValue.stderr, /--panel requires a value/);
+
+  const unknownOption = capture();
+  assert.equal(await main([
+    '--api-key', 'test', 'comic', 'create', '--prompt', 'hero', '--typo', 'value',
+  ], {}, unknownOption.io), 2);
+  assert.match(unknownOption.stderr, /Unknown option for comic create: --typo/);
 });
 
 test('config stores api key in isolated config home', async () => {
@@ -158,6 +229,27 @@ test('comic wait treats PROCESSED as a terminal success state', async () => {
     assert.equal(code, 0);
     assert.equal(reads, 1);
     assert.match(output.stdout, /PROCESSED/);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test('comic wait returns a failing exit code for terminal failure states', async () => {
+  const { server, baseUrl } = await startServer((request) => {
+    if (request.method === 'POST') return { id: 'gen_failed', status: 'QUEUED' };
+    return { id: 'gen_failed', status: 'FAILED', error: 'provider rejected prompt' };
+  });
+  try {
+    const output = capture();
+    const code = await main([
+      '--api-key', 'test',
+      '--api-url', baseUrl,
+      '--poll-interval-ms', '1',
+      'comic', 'create', '--prompt', 'hero', '--wait',
+    ], {}, output.io);
+    assert.equal(code, 1);
+    assert.match(output.stdout, /FAILED/);
+    assert.match(output.stderr, /ended with status FAILED/);
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }

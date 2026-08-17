@@ -10,8 +10,21 @@ import {
 } from './config.js';
 import { runAuth, requestComicApi } from './auth.js';
 import { CliError } from './errors.js';
+import { VERSION } from './version.js';
 
-export const VERSION = '0.1.0-beta.1';
+export { VERSION } from './version.js';
+
+const SUPPORTED_COMIC_SIZES = new Set([
+  '1024x1024',
+  '512x768',
+  '512x1024',
+  '576x1024',
+  '768x1024',
+  '1024x768',
+  '768x512',
+  '1024x576',
+  '1024x512',
+]);
 
 export async function main(
   argv = process.argv.slice(2),
@@ -30,10 +43,10 @@ export async function main(
       io.stdout.write(`llamagen ${VERSION}\n`);
       return 0;
     }
-    if (command === 'auth') return runAuth(args, globals, env, io, runtime);
+    if (command === 'auth') return await runAuth(args, globals, env, io, runtime);
     if (command === 'config') return runConfig(args, env, io);
-    if (command === 'comic') return runComic(args, globals, env, io);
-    if (command === 'animation') return runAnimation(args, globals, env, io);
+    if (command === 'comic') return await runComic(args, globals, env, io);
+    if (command === 'animation') return await runAnimation(args, globals, env, io);
     throw new CliError(`Unknown command: ${command}`, 2);
   } catch (error) {
     const code = error instanceof CliError ? error.code : 1;
@@ -50,42 +63,77 @@ async function runComic(args, globals, env, io) {
   }
   if (subcommand === 'create') {
     const options = parseOptions(args);
+    assertAllowedOptions(options, [
+      'prompt', 'promptUrl', 'size', 'preset', 'style', 'language', 'fixPanelNum', 'wait',
+    ], 'comic create');
     requireOption(options, 'prompt');
+    const size = options.size || '1024x1024';
+    if (!SUPPORTED_COMIC_SIZES.has(size)) {
+      throw new CliError(`Unsupported comic size: ${size}`, 2);
+    }
     const body = compact({
       prompt: options.prompt,
       promptUrl: options.promptUrl,
-      size: options.size,
-      preset: options.preset,
+      size,
+      preset: options.preset || 'neutral',
       style: options.style,
       language: options.language,
-      fixPanelNum: numberOption(options.fixPanelNum),
+      fixPanelNum: integerOption(options.fixPanelNum, '--fix-panel-num', 1, 20),
     });
     const job = await apiRequest('POST', '/v1/comics/generations', body, globals, env);
-    if (options.wait) writeJson(io, await waitForComic(job.id, globals, env));
-    else writeJson(io, job);
+    if (options.wait) {
+      if (typeof job.id !== 'string' || !job.id) {
+        throw new CliError('Comic API did not return a generation ID.', 1);
+      }
+      const completed = await waitForComic(job.id, globals, env);
+      writeJson(io, completed);
+      if (isFailureStatus(completed.status)) {
+        io.stderr.write(`Comic generation ${job.id} ended with status ${completed.status}.\n`);
+        return 1;
+      }
+    } else writeJson(io, job);
     return 0;
   }
   if (subcommand === 'get') {
     const id = args.shift();
     if (!id) throw new CliError('Usage: llamagen comic get <generation_id>', 2);
-    writeJson(io, await apiRequest('GET', `/v1/comics/generations/${encodeURIComponent(id)}`, undefined, globals, env));
+    const options = parseOptions(args);
+    assertAllowedOptions(options, ['page', 'panel'], 'comic get');
+    const query = new URLSearchParams();
+    const page = integerOption(options.page, '--page', 0);
+    const panel = integerOption(options.panel, '--panel', 0);
+    if (page !== undefined) query.set('page', String(page));
+    if (panel !== undefined) query.set('panel', String(panel));
+    const suffix = query.size ? `?${query.toString()}` : '';
+    writeJson(io, await apiRequest('GET', `/v1/comics/generations/${encodeURIComponent(id)}${suffix}`, undefined, globals, env));
     return 0;
   }
   if (subcommand === 'continue') {
     const id = args.shift();
     if (!id) throw new CliError('Usage: llamagen comic continue <generation_id> --prompt <prompt>', 2);
     const options = parseOptions(args);
+    assertAllowedOptions(options, ['prompt', 'fixPanelNum'], 'comic continue');
     requireOption(options, 'prompt');
-    writeJson(io, await apiRequest('PATCH', `/v1/comics/generations/${encodeURIComponent(id)}`, { prompt: options.prompt, action: 'continueWrite' }, globals, env));
+    writeJson(io, await apiRequest('PATCH', `/v1/comics/generations/${encodeURIComponent(id)}`, compact({
+      prompt: options.prompt,
+      fixPanelNum: integerOption(options.fixPanelNum, '--fix-panel-num', 1, 20),
+      action: 'continueWrite',
+    }), globals, env));
     return 0;
   }
   if (subcommand === 'update-panel') {
     const id = args.shift();
     if (!id) throw new CliError('Usage: llamagen comic update-panel <generation_id> --page <n> --panel <n> --prompt <prompt>', 2);
     const options = parseOptions(args);
+    assertAllowedOptions(options, ['page', 'panel', 'prompt', 'panelPrompt'], 'comic update-panel');
+    const panel = integerOption(options.panel, '--panel', 0);
+    if (panel === undefined) throw new CliError('Missing required option --panel', 2);
+    if (!hasNonEmptyString(options.prompt) && !hasNonEmptyString(options.panelPrompt)) {
+      throw new CliError('Missing required option --prompt or --panel-prompt', 2);
+    }
     const body = compact({
-      page: numberOption(options.page),
-      panel: numberOption(options.panel),
+      page: integerOption(options.page, '--page', 0),
+      panel,
       prompt: options.prompt,
       panelPrompt: options.panelPrompt,
       action: 'regeneratePanel',
@@ -108,6 +156,7 @@ async function runAnimation(args, globals, env, io) {
   }
   if (subcommand === 'create') {
     const options = parseOptions(args);
+    assertAllowedOptions(options, ['prompt'], 'animation create');
     requireOption(options, 'prompt');
     writeJson(io, await apiRequest('POST', '/v1/artworks/generations', { prompt: options.prompt }, globals, env));
     return 0;
@@ -222,8 +271,8 @@ function parseGlobals(argv) {
     else if (arg === '--site-url') globals.siteUrl = requiredGlobalValue(argv, ++index, arg);
     else if (arg === '--api-url') globals.apiUrl = requiredGlobalValue(argv, ++index, arg);
     else if (arg === '--base-url') globals.baseUrl = requiredGlobalValue(argv, ++index, arg);
-    else if (arg === '--timeout-ms') globals.timeoutMs = requiredGlobalValue(argv, ++index, arg);
-    else if (arg === '--poll-interval-ms') globals.pollIntervalMs = requiredGlobalValue(argv, ++index, arg);
+    else if (arg === '--timeout-ms') globals.timeoutMs = integerOption(requiredGlobalValue(argv, ++index, arg), arg, 1);
+    else if (arg === '--poll-interval-ms') globals.pollIntervalMs = integerOption(requiredGlobalValue(argv, ++index, arg), arg, 1);
     else args.push(arg);
   }
   return { args, globals };
@@ -257,11 +306,33 @@ function requireOption(options, key) {
   }
 }
 
-function numberOption(value) {
-  if (value === undefined || value === true) return undefined;
+function integerOption(value, flag, min, max = Number.MAX_SAFE_INTEGER) {
+  if (value === undefined) return undefined;
+  if (value === true) {
+    throw new CliError(`${flag} requires a value.`, 2);
+  }
   const parsed = Number(value);
-  if (!Number.isFinite(parsed)) throw new CliError(`Expected numeric value, got ${value}`, 2);
+  if (!Number.isSafeInteger(parsed) || parsed < min || parsed > max) {
+    const range = max === Number.MAX_SAFE_INTEGER ? `${min} or greater` : `${min} to ${max}`;
+    throw new CliError(`${flag} must be an integer from ${range}.`, 2);
+  }
   return parsed;
+}
+
+function assertAllowedOptions(options, allowed, command) {
+  const allowedSet = new Set(allowed);
+  const unknown = Object.keys(options).find((key) => !allowedSet.has(key));
+  if (unknown) {
+    throw new CliError(`Unknown option for ${command}: --${kebabCase(unknown)}`, 2);
+  }
+}
+
+function hasNonEmptyString(value) {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+function isFailureStatus(status) {
+  return ['failed', 'canceled', 'cancelled'].includes(String(status).toLowerCase());
 }
 
 function compact(value) {
@@ -287,7 +358,7 @@ function helpText() {
 }
 
 function comicHelpText() {
-  return `Usage:\n  llamagen comic create --prompt <prompt> [--prompt-url <url>] [--size 1024x1024] [--wait]\n  llamagen comic get <generation_id>\n  llamagen comic continue <generation_id> --prompt <prompt>\n  llamagen comic update-panel <generation_id> --page <n> --panel <n> --prompt <prompt>\n  llamagen comic usage\n`;
+  return `Usage:\n  llamagen comic create --prompt <prompt> [--prompt-url <url>] [--size 1024x1024] [--fix-panel-num <1-20>] [--wait]\n  llamagen comic get <generation_id> [--page <n>] [--panel <n>]\n  llamagen comic continue <generation_id> --prompt <prompt> [--fix-panel-num <1-20>]\n  llamagen comic update-panel <generation_id> [--page <n>] --panel <n> (--prompt <prompt> | --panel-prompt <prompt>)\n  llamagen comic usage\n`;
 }
 
 function animationHelpText() {

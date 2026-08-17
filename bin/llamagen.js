@@ -1,15 +1,15 @@
 #!/usr/bin/env node
 
-import path from 'node:path';
-import { pathToFileURL } from 'node:url';
+import fs from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
 import { main } from '../src/cli.js';
 
-export { main } from '../src/cli.js';
+export { main, VERSION } from '../src/cli.js';
 
 const isDirect =
   process.argv[1] &&
-  import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href;
+  fs.realpathSync(process.argv[1]) === fileURLToPath(import.meta.url);
 
 if (isDirect) {
   const code = await main();

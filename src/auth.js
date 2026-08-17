@@ -13,8 +13,8 @@ import {
 } from './config.js';
 import { CliError } from './errors.js';
 import { requestJson } from './http.js';
+import { VERSION } from './version.js';
 
-const VERSION = '0.1.0-beta.1';
 const LOGIN_TIMEOUT_MS = 5 * 60 * 1000;
 
 export async function runAuth(args, globals, env, io, runtime = {}) {
@@ -30,7 +30,7 @@ export async function runAuth(args, globals, env, io, runtime = {}) {
 }
 
 async function authLogin(args, globals, env, io, runtime) {
-  const options = parseAuthOptions(args);
+  const options = parseAuthOptions(args, new Set(['json', 'noBrowser', 'loginTimeoutMs']));
   const config = readConfig(env);
   const siteUrl = resolveSiteUrl(globals, env, config);
   const verifier = randomBytes(32).toString('base64url');
@@ -55,15 +55,16 @@ async function authLogin(args, globals, env, io, runtime) {
       headers: { 'user-agent': `llamagen-cli/${VERSION}` },
       timeoutMs: Number(globals.timeoutMs || 30000),
     });
-    if (!start?.authorizeUrl) {
+    const authorizeUrl = normalizeAuthorizeUrl(start?.authorizeUrl, siteUrl);
+    if (!authorizeUrl) {
       throw new CliError('LlamaGen did not return a browser authorization URL.', 1);
     }
 
     const progressOutput = options.json ? io.stderr : io.stdout;
-    progressOutput.write(`Opening ${start.authorizeUrl}\n`);
+    progressOutput.write(`Opening ${authorizeUrl}\n`);
     if (!options.noBrowser) {
       try {
-        await (runtime.openBrowser || openBrowser)(start.authorizeUrl);
+        await (runtime.openBrowser || openBrowser)(authorizeUrl);
       } catch {
         io.stderr.write('Could not open the browser automatically. Open the URL above manually.\n');
       }
@@ -139,7 +140,7 @@ async function authLogin(args, globals, env, io, runtime) {
 }
 
 async function authStatus(args, globals, env, io) {
-  const options = parseAuthOptions(args);
+  const options = parseAuthOptions(args, new Set(['json', 'offline']));
   const resolved = resolveCredential(globals, env);
   if (!resolved.apiToken) {
     const result = { authenticated: false, status: 'not_authenticated', source: 'none' };
@@ -182,7 +183,7 @@ async function authStatus(args, globals, env, io) {
 }
 
 function authLogout(args, env, io) {
-  const options = parseAuthOptions(args);
+  const options = parseAuthOptions(args, new Set(['json']));
   const removed = removeCredential(env);
   const environmentStillActive = Boolean(env.LLAMAGEN_API_KEY);
   const result = {
@@ -302,17 +303,44 @@ function openBrowser(url) {
   });
 }
 
-function parseAuthOptions(args) {
+function parseAuthOptions(args, allowed) {
   const options = {};
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
-    if (arg === '--json') options.json = true;
-    else if (arg === '--offline') options.offline = true;
-    else if (arg === '--no-browser') options.noBrowser = true;
-    else if (arg === '--login-timeout-ms') options.loginTimeoutMs = args[++index];
+    let key;
+    if (arg === '--json') key = 'json';
+    else if (arg === '--offline') key = 'offline';
+    else if (arg === '--no-browser') key = 'noBrowser';
+    else if (arg === '--login-timeout-ms') key = 'loginTimeoutMs';
     else throw new CliError(`Unknown auth option: ${arg}`, 2);
+    if (!allowed.has(key)) throw new CliError(`Unsupported option for this auth command: ${arg}`, 2);
+    if (key === 'loginTimeoutMs') {
+      const value = args[++index];
+      options[key] = positiveInteger(value, arg);
+    } else {
+      options[key] = true;
+    }
   }
   return options;
+}
+
+function normalizeAuthorizeUrl(value, siteUrl) {
+  if (typeof value !== 'string') return null;
+  try {
+    const authorizeUrl = new URL(value);
+    if (authorizeUrl.origin !== new URL(siteUrl).origin) return null;
+    return authorizeUrl.toString();
+  } catch {
+    return null;
+  }
+}
+
+function positiveInteger(value, flag) {
+  const parsed = Number(value);
+  if (!value || !Number.isSafeInteger(parsed) || parsed <= 0) {
+    throw new CliError(`${flag} requires a positive integer.`, 2);
+  }
+  return parsed;
 }
 
 function printStatus(io, result, json) {

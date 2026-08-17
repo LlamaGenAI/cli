@@ -100,10 +100,12 @@ Inspect and continue a generation:
 llamagen comic get <generation_id>
 llamagen comic continue <generation_id> --prompt "Continue for four panels"
 llamagen comic update-panel <generation_id> \
-  --page 1 \
+  --page 0 \
   --panel 2 \
   --prompt "Move the camera closer to the hero"
 ```
+
+Page and panel indexes are zero-based, matching the Comic API and SDK.
 
 Check Comic API usage:
 
@@ -162,10 +164,10 @@ llamagen auth login [--no-browser] [--json]
 llamagen auth status [--offline] [--json]
 llamagen auth logout [--json]
 
-llamagen comic create --prompt <prompt> [--wait]
-llamagen comic get <generation_id>
-llamagen comic continue <generation_id> --prompt <prompt>
-llamagen comic update-panel <generation_id> --page <n> --panel <n> --prompt <prompt>
+llamagen comic create --prompt <prompt> [--fix-panel-num <1-20>] [--wait]
+llamagen comic get <generation_id> [--page <n>] [--panel <n>]
+llamagen comic continue <generation_id> --prompt <prompt> [--fix-panel-num <1-20>]
+llamagen comic update-panel <generation_id> [--page <n>] --panel <n> (--prompt <prompt> | --panel-prompt <prompt>)
 llamagen comic usage
 
 llamagen config set <site-url|api-url|api-key> <value>
