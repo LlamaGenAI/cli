@@ -14,7 +14,7 @@ Install the companion agent skill when you want an AI coding assistant to run
 the comic workflow for you:
 
 ```bash
-npx skills add LlamaGenAI/skills
+npx skills add LlamaGenAI/skills --yes
 ```
 
 ## Sign in
